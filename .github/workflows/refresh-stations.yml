@@ -1,0 +1,40 @@
+name: Refresh stations
+
+# One request to EPDK a day. The feed's quota is tight, so a refused run just waits for the next
+# day; build_stations.py only fails the job when the data has gone stale or looks broken.
+on:
+  schedule:
+    - cron: "17 1 * * *" # 04:17 Türkiye
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-stations
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the staleness check reads when stations.json last changed
+
+      - run: python3 test_build_stations.py
+        working-directory: scripts
+
+      - run: python3 scripts/build_stations.py
+
+      - name: Publish if changed
+        run: |
+          if git diff --quiet -- stations.json && git ls-files --error-unmatch stations.json >/dev/null 2>&1; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add stations.json
+          git commit -m "Refresh stations from EPDK"
+          git push
